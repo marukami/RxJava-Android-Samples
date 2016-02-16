@@ -17,6 +17,7 @@ import butterknife.ButterKnife;
 import rx.Observable;
 import rx.Observer;
 import rx.Subscription;
+import rx.functions.Func1;
 import rx.functions.Func3;
 import timber.log.Timber;
 
@@ -46,13 +47,20 @@ public class FormValidationCombineLatestFragment
               false);
         ButterKnife.bind(this, layout);
 
-        _emailChangeObservable = RxTextView.textChanges(_email).skip(1);
-        _passwordChangeObservable = RxTextView.textChanges(_password).skip(1);
-        _numberChangeObservable = RxTextView.textChanges(_number).skip(1);
+        return layout;
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+
+
+        DirtyFilter dirtyFilter = new DirtyFilter();
+        _emailChangeObservable = RxTextView.textChanges(_email).filter(dirtyFilter);
+        _passwordChangeObservable = RxTextView.textChanges(_password).filter(dirtyFilter);
+        _numberChangeObservable = RxTextView.textChanges(_number).filter(dirtyFilter);
 
         _combineLatestEvents();
-
-        return layout;
     }
 
     @Override
@@ -67,8 +75,22 @@ public class FormValidationCombineLatestFragment
         ButterKnife.unbind(this);
     }
 
+    private static class DirtyFilter implements Func1<CharSequence, Boolean> {
+
+        private boolean isDirty = false;
+
+        @Override
+        public Boolean call(CharSequence charSequence) {
+            if (!isDirty) {
+                isDirty = !isEmpty(charSequence);
+            }
+            return isDirty;
+        }
+    }
+
     private void _combineLatestEvents() {
-        _subscription = Observable.combineLatest(_emailChangeObservable,
+        _subscription = Observable.combineLatest(
+              _emailChangeObservable,
               _passwordChangeObservable,
               _numberChangeObservable,
               new Func3<CharSequence, CharSequence, CharSequence, Boolean>() {
