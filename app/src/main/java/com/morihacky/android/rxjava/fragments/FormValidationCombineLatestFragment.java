@@ -4,19 +4,24 @@ import static android.text.TextUtils.isEmpty;
 import static android.util.Patterns.EMAIL_ADDRESS;
 
 import android.os.Bundle;
+import android.support.annotation.ColorRes;
 import android.support.annotation.Nullable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.TextView;
+
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.Unbinder;
+
 import com.jakewharton.rxbinding2.widget.RxTextView;
 import com.morihacky.android.rxjava.R;
+
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Flowable;
+import io.reactivex.functions.Predicate;
 import io.reactivex.subscribers.DisposableSubscriber;
 import timber.log.Timber;
 
@@ -47,11 +52,11 @@ public class FormValidationCombineLatestFragment extends BaseFragment {
     unbinder = ButterKnife.bind(this, layout);
 
     _emailChangeObservable =
-        RxTextView.textChanges(_email).skip(1).toFlowable(BackpressureStrategy.LATEST);
+        RxTextView.textChanges(_email).toFlowable(BackpressureStrategy.LATEST);
     _passwordChangeObservable =
-        RxTextView.textChanges(_password).skip(1).toFlowable(BackpressureStrategy.LATEST);
+        RxTextView.textChanges(_password).toFlowable(BackpressureStrategy.LATEST);
     _numberChangeObservable =
-        RxTextView.textChanges(_number).skip(1).toFlowable(BackpressureStrategy.LATEST);
+        RxTextView.textChanges(_number).toFlowable(BackpressureStrategy.LATEST);
 
     _combineLatestEvents();
 
@@ -71,11 +76,9 @@ public class FormValidationCombineLatestFragment extends BaseFragment {
         new DisposableSubscriber<Boolean>() {
           @Override
           public void onNext(Boolean formValid) {
-            if (formValid) {
-              _btnValidIndicator.setBackgroundColor(getResources().getColor(R.color.blue));
-            } else {
-              _btnValidIndicator.setBackgroundColor(getResources().getColor(R.color.gray));
-            }
+            @ColorRes
+            int color = formValid ? R.color.blue : R.color.gray;
+            _btnValidIndicator.setBackgroundColor(getResources().getColor(color));
           }
 
           @Override
@@ -89,32 +92,41 @@ public class FormValidationCombineLatestFragment extends BaseFragment {
           }
         };
 
+    Predicate<CharSequence> notEmpty = (x -> !isEmpty(x));
+    // Wait until each field is dirt
+    Flowable<Boolean> dirtyCheckFlowable = Flowable.combineLatest(
+        _emailChangeObservable.filter(notEmpty).take(1),
+        _passwordChangeObservable.filter(notEmpty).take(1),
+        _numberChangeObservable.filter(notEmpty).take(1),
+        (email, password, number) -> !isEmpty(email) && !isEmpty(number) && !isEmpty(password));
+
     Flowable.combineLatest(
-            _emailChangeObservable,
-            _passwordChangeObservable,
-            _numberChangeObservable,
-            (newEmail, newPassword, newNumber) -> {
-              boolean emailValid = !isEmpty(newEmail) && EMAIL_ADDRESS.matcher(newEmail).matches();
-              if (!emailValid) {
-                _email.setError("Invalid Email!");
-              }
+        _emailChangeObservable,
+        _passwordChangeObservable,
+        _numberChangeObservable,
+        dirtyCheckFlowable, // Just here to trigger the first event
+        (newEmail, newPassword, newNumber, __ ) -> {
+          boolean emailValid = !isEmpty(newEmail) && EMAIL_ADDRESS.matcher(newEmail).matches();
+          if (!emailValid) {
+            _email.setError("Invalid Email!");
+          }
 
-              boolean passValid = !isEmpty(newPassword) && newPassword.length() > 8;
-              if (!passValid) {
-                _password.setError("Invalid Password!");
-              }
+          boolean passValid = !isEmpty(newPassword) && newPassword.length() > 8;
+          if (!passValid) {
+            _password.setError("Invalid Password!");
+          }
 
-              boolean numValid = !isEmpty(newNumber);
-              if (numValid) {
-                int num = Integer.parseInt(newNumber.toString());
-                numValid = num > 0 && num <= 100;
-              }
-              if (!numValid) {
-                _number.setError("Invalid Number!");
-              }
+          boolean numValid = !isEmpty(newNumber);
+          if (numValid) {
+            int num = Integer.parseInt(newNumber.toString());
+            numValid = num > 0 && num <= 100;
+          }
+          if (!numValid) {
+            _number.setError("Invalid Number!");
+          }
 
-              return emailValid && passValid && numValid;
-            })
+          return emailValid && passValid && numValid;
+        })
         .subscribe(_disposableObserver);
   }
 }
